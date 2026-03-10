@@ -1,3 +1,4 @@
-#! /usr/bin/env python3
+#! /usr/bin/env python3.11
 
-print("hello world!")
+import open3d as o3d
+
