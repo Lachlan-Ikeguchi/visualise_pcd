@@ -6,25 +6,48 @@ import sys
 
 files = sys.argv[1:]
 
-FILTER_ITERATIONS = 1
+FILTER_ITERATIONS = 10
+
+FILTER_LENGTH_THRESHOLD = 0.2
+
 UPSIDE_DOWN = True
 POINT_OVERLAY = True
 
 PLOT_WIDTH = 1200
-PLOT_HEIGHT= 800
+PLOT_HEIGHT = 800
 
 for file in files:
     point_cloud = o3d.io.read_point_cloud(file)
-    
+
     point_cloud.estimate_normals()
 
     obb = point_cloud.get_oriented_bounding_box()
     point_cloud.rotate(obb.R.T, center=obb.center)
 
     if UPSIDE_DOWN:
-        point_cloud.rotate(point_cloud.get_rotation_matrix_from_xyz((np.pi, 0, 0)), center=point_cloud.get_center())
+        point_cloud.rotate(point_cloud.get_rotation_matrix_from_xyz(
+            (np.pi, 0, 0)), center=point_cloud.get_center())
 
-    mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(point_cloud, depth=10)
+    mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(
+        point_cloud, depth=10)
+
+    triangles = np.asarray(mesh.triangles)
+    vertices = np.asarray(mesh.vertices)
+
+    edge_lengths = []
+    for triangle in triangles:
+        v0, v1, v2 = vertices[triangle]
+        edges = [
+            np.linalg.norm(v1 - v0),
+            np.linalg.norm(v2 - v1),
+            np.linalg.norm(v0 - v2)
+        ]
+        edge_lengths.append(max(edges))
+
+    # Remove triangles with edge lengths greater than threshold
+    large_triangle_mask = np.array(edge_lengths) > FILTER_LENGTH_THRESHOLD
+    mesh.remove_triangles_by_mask(large_triangle_mask)
+    mesh.remove_unreferenced_vertices()
 
     mesh.filter_smooth_laplacian(number_of_iterations=FILTER_ITERATIONS)
 
@@ -35,7 +58,8 @@ for file in files:
     mesh.compute_vertex_normals()
 
     if POINT_OVERLAY:
-        o3d.visualization.draw_plotly([mesh, display_cloud], width=PLOT_WIDTH , height=PLOT_HEIGHT)
+        o3d.visualization.draw_plotly(
+            [mesh, display_cloud], width=PLOT_WIDTH, height=PLOT_HEIGHT)
     else:
-        o3d.visualization.draw_plotly([mesh], width=PLOT_WIDTH , height=PLOT_HEIGHT)
-        
+        o3d.visualization.draw_plotly(
+            [mesh], width=PLOT_WIDTH, height=PLOT_HEIGHT)
