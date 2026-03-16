@@ -8,9 +8,9 @@ files = sys.argv[1:]
 
 FILTER_ITERATIONS = 10
 
-FILTER_LENGTH_THRESHOLD = 0.2
+POINT_DISTANCE_THRESHOLD = 0.5
 
-UPSIDE_DOWN = True
+UPSIDE_DOWN = False
 POINT_OVERLAY = True
 
 PLOT_WIDTH = 1200
@@ -31,21 +31,25 @@ for file in files:
     mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(
         point_cloud, depth=10)
 
+    # Build KDTree on point cloud for distance queries
+    pcd_tree = o3d.geometry.KDTreeFlann(point_cloud)
+
     triangles = np.asarray(mesh.triangles)
     vertices = np.asarray(mesh.vertices)
 
-    edge_lengths = []
-    for triangle in triangles:
+    # Compute centroids and check distance to nearest point
+    far_triangle_mask = np.zeros(len(triangles), dtype=bool)
+    for i, triangle in enumerate(triangles):
         v0, v1, v2 = vertices[triangle]
-        edges = [
-            np.linalg.norm(v1 - v0),
-            np.linalg.norm(v2 - v1),
-            np.linalg.norm(v0 - v2)
-        ]
-        edge_lengths.append(max(edges))
+        centroid = (v0 + v1 + v2) / 3.0
+        [k, idx, _] = pcd_tree.search_knn_vector_3d(centroid, 1)
+        if k == 1:
+            nearest_point = np.asarray(point_cloud.points)[idx[0]]
+            distance = np.linalg.norm(centroid - nearest_point)
+            if distance > POINT_DISTANCE_THRESHOLD:
+                far_triangle_mask[i] = True
 
-    large_triangle_mask = np.array(edge_lengths) > FILTER_LENGTH_THRESHOLD
-    mesh.remove_triangles_by_mask(large_triangle_mask)
+    mesh.remove_triangles_by_mask(far_triangle_mask)
     mesh.remove_unreferenced_vertices()
     mesh.remove_degenerate_triangles()
     mesh.remove_duplicated_triangles()
@@ -80,21 +84,24 @@ for file in files:
     min_bound = mesh_bounds.min_bound
     max_bound = mesh_bounds.max_bound
 
-    z_range = max_bound[2] - min_bound[2]
+    extents = max_bound - min_bound
+    max_extent = np.max(extents)
+    center = (min_bound + max_bound) * 0.5
 
-    # expand z range to make it flatter
-    z_expansion = z_range * 2.0
+    # Keep the plot scaled equally in all dimensions by using a cubic bounding box.
+    cube_min = center - max_extent * 0.5
+    cube_max = center + max_extent * 0.5
 
     from open3d.geometry import TriangleMesh
     bounding_points = np.array([
-        [min_bound[0], min_bound[1], min_bound[2] - z_expansion],  # Bottom
-        [max_bound[0], min_bound[1], min_bound[2] - z_expansion],
-        [min_bound[0], max_bound[1], min_bound[2] - z_expansion],
-        [max_bound[0], max_bound[1], min_bound[2] - z_expansion],
-        [min_bound[0], min_bound[1], max_bound[2] + z_expansion],  # Top
-        [max_bound[0], min_bound[1], max_bound[2] + z_expansion],
-        [min_bound[0], max_bound[1], max_bound[2] + z_expansion],
-        [max_bound[0], max_bound[1], max_bound[2] + z_expansion],
+        [cube_min[0], cube_min[1], cube_min[2]],  # Bottom
+        [cube_max[0], cube_min[1], cube_min[2]],
+        [cube_min[0], cube_max[1], cube_min[2]],
+        [cube_max[0], cube_max[1], cube_min[2]],
+        [cube_min[0], cube_min[1], cube_max[2]],  # Top
+        [cube_max[0], cube_min[1], cube_max[2]],
+        [cube_min[0], cube_max[1], cube_max[2]],
+        [cube_max[0], cube_max[1], cube_max[2]],
     ])
 
     bounding_box_mesh = TriangleMesh()
