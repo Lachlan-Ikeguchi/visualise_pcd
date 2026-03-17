@@ -24,15 +24,20 @@ from sklearn.neighbors import KDTree
 
 files = sys.argv[1:]
 
-FILTER_ITERATIONS = 10
+FILTER_ITERATIONS = 5
 POINT_DISTANCE_THRESHOLD = 0.5
 UPSIDE_DOWN = False
 POINT_OVERLAY = False
 GRADIENT_VISUALIZATION = True
-SLOPE_CULLING_THRESHOLD = 1.5  # Minimum slope in radians to display points
+SLOPE_CULLING_THRESHOLD = 1.5
 
 PLOT_WIDTH = 1200
 PLOT_HEIGHT = 800
+
+def create_triangle_centroids(tri_vertices, all_vertices):
+    return (all_vertices[tri_vertices[:, 0]] + 
+            all_vertices[tri_vertices[:, 1]] + 
+            all_vertices[tri_vertices[:, 2]]) / 3.0
 
 for input_file_path in files:
     input_pcd = o3d.io.read_point_cloud(input_file_path)
@@ -47,7 +52,7 @@ for input_file_path in files:
             (np.pi, 0, 0)), center=input_pcd.get_center())
 
     reconstructed_mesh, poisson_densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(
-        input_pcd, depth=10)
+        input_pcd, depth=8)
 
     pcd_kdtree = o3d.geometry.KDTreeFlann(input_pcd)
 
@@ -55,17 +60,22 @@ for input_file_path in files:
     mesh_vertices = np.asarray(reconstructed_mesh.vertices)
 
     far_from_original_pcd_tri_mask = np.zeros(len(mesh_triangles), dtype=bool)
-    for tri_idx, triangle_vert_idx in enumerate(mesh_triangles):
-        vert_0_pos = mesh_vertices[triangle_vert_idx[0]]
-        vert_1_pos = mesh_vertices[triangle_vert_idx[1]]
-        vert_2_pos = mesh_vertices[triangle_vert_idx[2]]
-        triangle_centroid_pos = (vert_0_pos + vert_1_pos + vert_2_pos) / 3.0
-        [k, nearest_pcd_point_idx, _] = pcd_kdtree.search_knn_vector_3d(triangle_centroid_pos, 1)
-        if k == 1:
-            nearest_pcd_point_pos = np.asarray(input_pcd.points)[nearest_pcd_point_idx[0]]
-            distance_to_original_pcd = np.linalg.norm(triangle_centroid_pos - nearest_pcd_point_pos)
-            if distance_to_original_pcd > POINT_DISTANCE_THRESHOLD:
-                far_from_original_pcd_tri_mask[tri_idx] = True
+    
+    triangle_centroids = create_triangle_centroids(mesh_triangles, mesh_vertices)
+    
+    batch_size = 1000
+    for batch_start in range(0, len(triangle_centroids), batch_size):
+        batch_end = min(batch_start + batch_size, len(triangle_centroids))
+        batch_centroids = triangle_centroids[batch_start:batch_end]
+        
+        for local_idx, centroid in enumerate(batch_centroids):
+            [k, nearest_pcd_point_idx, _] = pcd_kdtree.search_knn_vector_3d(centroid, 1)
+            if k == 1:
+                nearest_pcd_point_pos = np.asarray(input_pcd.points)[nearest_pcd_point_idx[0]]
+                distance_to_original_pcd = np.linalg.norm(centroid - nearest_pcd_point_pos)
+                if distance_to_original_pcd > POINT_DISTANCE_THRESHOLD:
+                    global_idx = batch_start + local_idx
+                    far_from_original_pcd_tri_mask[global_idx] = True
 
     reconstructed_mesh.remove_triangles_by_mask(far_from_original_pcd_tri_mask)
     reconstructed_mesh.remove_unreferenced_vertices()
@@ -76,9 +86,8 @@ for input_file_path in files:
 
     connected_tri_labels, connected_component_sizes, _ = reconstructed_mesh.cluster_connected_triangles()
     connected_tri_labels = np.asarray(connected_tri_labels)
-    total_triangle_count = len(reconstructed_mesh.triangles)
 
-    small_cluster_tri_mask = np.zeros(total_triangle_count, dtype=bool)
+    small_cluster_tri_mask = np.zeros(len(reconstructed_mesh.triangles), dtype=bool)
 
     for component_idx, component_size in enumerate(connected_component_sizes):
         if component_size < 3:
@@ -117,12 +126,7 @@ for input_file_path in files:
         slope_vis_point_positions = np.asarray(slope_vis_pcd.points)
         
         current_mesh_triangles = np.asarray(reconstructed_mesh.triangles)
-        triangle_centroid_positions = np.zeros((len(current_mesh_triangles), 3))
-        for tri_idx, tri_vert_idx in enumerate(current_mesh_triangles):
-            vert_0_pos = mesh_vertices[tri_vert_idx[0]]
-            vert_1_pos = mesh_vertices[tri_vert_idx[1]]
-            vert_2_pos = mesh_vertices[tri_vert_idx[2]]
-            triangle_centroid_positions[tri_idx] = (vert_0_pos + vert_1_pos + vert_2_pos) / 3.0
+        triangle_centroid_positions = create_triangle_centroids(current_mesh_triangles, mesh_vertices)
         
         nearest_tri_finder = KDTree(triangle_centroid_positions)
         distances_to_nearest_tri, indices_of_nearest_tri = nearest_tri_finder.query(slope_vis_point_positions, k=1)
