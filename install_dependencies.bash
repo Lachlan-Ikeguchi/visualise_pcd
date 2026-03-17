@@ -6,4 +6,4 @@ source source.bash
 
 pip install --upgrade pip
 
-pip install open3d
+pip install open3d scikit-learn
