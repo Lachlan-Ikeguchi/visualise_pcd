@@ -40,7 +40,7 @@ TRIANGLE_FILTERING_BATCH_SIZE = 1000
 GRADIENT_VISUALIZATION_POINTS = 50000
 POINT_CLOUD_DOWNSAMPLE_RATIO = 0.1
 
-PLOT_WIDTH = 1200
+PLOT_WIDTH = 1600
 PLOT_HEIGHT = 800
 
 
@@ -205,17 +205,17 @@ def flatness_mesh(mesh, slope_vis_pcd):
 
     buildable_mesh = o3d.geometry.TriangleMesh()
     buildable_mesh.vertices = mesh.vertices
-    
+
     all_triangles = np.asarray(mesh.triangles)
     buildable_triangles = all_triangles[buildable_mask]
     buildable_mesh.triangles = o3d.utility.Vector3iVector(buildable_triangles)
-    
+
     buildable_mesh.paint_uniform_color([0.5, 0.5, 1.0])
-    
+
     vertices = np.asarray(buildable_mesh.vertices)
     vertices[:, 2] += 0.02  # slightly above main mesh
     buildable_mesh.vertices = o3d.utility.Vector3dVector(vertices)
-    
+
     return buildable_mesh
 
 
@@ -349,7 +349,13 @@ def get_point_object(geometry, point_sample_factor=1):
     return scatter_3d
 
 
-def visualize_mesh(mesh, bounding_box, slope_vis_pcd=None, point_cloud_overlay=None, buildable_mesh=None):
+def visualize_mesh(
+    mesh,
+    bounding_box,
+    slope_vis_pcd=None,
+    point_cloud_overlay=None,
+    buildable_mesh=None,
+):
     geometries = [mesh]
 
     if slope_vis_pcd is not None:
@@ -385,7 +391,7 @@ def visualize_mesh(mesh, bounding_box, slope_vis_pcd=None, point_cloud_overlay=N
                     j=triangles[:, 1],
                     k=triangles[:, 2],
                     flatshading=True,
-                    color='rgba(50, 150, 255, 0.7)',
+                    color="rgba(50, 150, 255, 0.7)",
                     lighting=dict(
                         ambient=1.0,
                         diffuse=1.0,
@@ -433,14 +439,14 @@ def visualize_mesh(mesh, bounding_box, slope_vis_pcd=None, point_cloud_overlay=N
 
     buildable_mesh_index = None
     for i, obj in enumerate(graph_objects):
-        if hasattr(obj, 'color') and 'rgba' in str(obj.color):
+        if hasattr(obj, "color") and "rgba" in str(obj.color):
             buildable_mesh_index = i
             break
 
     if buildable_mesh_index is not None:
         visibility_on = [True] * len(graph_objects)
         visibility_off = [i != buildable_mesh_index for i in range(len(graph_objects))]
-        
+
         updatemenus = [
             dict(
                 type="buttons",
@@ -453,7 +459,7 @@ def visualize_mesh(mesh, bounding_box, slope_vis_pcd=None, point_cloud_overlay=N
                         method="update",
                         args=[
                             {"visible": visibility_off},
-                            {"title": "Buildable Overlay: OFF"}
+                            {"title": "Buildable Overlay: OFF"},
                         ],
                     ),
                     dict(
@@ -461,7 +467,7 @@ def visualize_mesh(mesh, bounding_box, slope_vis_pcd=None, point_cloud_overlay=N
                         method="update",
                         args=[
                             {"visible": visibility_on},
-                            {"title": "Buildable Overlay: ON"}
+                            {"title": "Buildable Overlay: ON"},
                         ],
                     ),
                 ],
@@ -514,7 +520,9 @@ def process_file(file_path):
 
     point_cloud_overlay = create_point_cloud_overlay(point_cloud)
 
-    visualize_mesh(mesh, bounding_box, slope_vis_pcd, point_cloud_overlay, buildable_mesh)
+    visualize_mesh(
+        mesh, bounding_box, slope_vis_pcd, point_cloud_overlay, buildable_mesh
+    )
 
 
 FILES = sys.argv[1:]

@@ -7,6 +7,7 @@ To install:
 To run:
 1. Source `source.bash`
 2. Run `visualiser.py` followed by the individual .pcd files.  Multiple files per run is supported.
+3. Point overlay can be toggled by clicking on it in the legend.
 
 Upside down point cloud:
 - If a point cloud is upside down, it can be flipped by `point_cloud_flipper.py`
