@@ -349,7 +349,7 @@ def get_point_object(geometry, point_sample_factor=1):
     return scatter_3d
 
 
-def visualize_mesh(mesh, bounding_box, slope_vis_pcd=None, point_cloud_overlay=None, flatness_mesh=None):
+def visualize_mesh(mesh, bounding_box, slope_vis_pcd=None, point_cloud_overlay=None, buildable_mesh=None):
     geometries = [mesh]
 
     if slope_vis_pcd is not None:
@@ -358,8 +358,8 @@ def visualize_mesh(mesh, bounding_box, slope_vis_pcd=None, point_cloud_overlay=N
     if point_cloud_overlay is not None:
         geometries.append(point_cloud_overlay)
 
-    if flatness_mesh is not None:
-        geometries.append(flatness_mesh)
+    if buildable_mesh is not None:
+        geometries.append(buildable_mesh)
 
     graph_objects = []
     for geometry in geometries:
@@ -374,7 +374,7 @@ def visualize_mesh(mesh, bounding_box, slope_vis_pcd=None, point_cloud_overlay=N
             graph_objects.append(point_obj)
 
         if geometry_type == o3d.geometry.Geometry.Type.TriangleMesh:
-            if geometry == flatness_mesh:
+            if geometry == buildable_mesh:
                 triangles = np.asarray(geometry.triangles)
                 vertices = np.asarray(geometry.vertices)
                 mesh_obj = go.Mesh3d(
@@ -431,15 +431,15 @@ def visualize_mesh(mesh, bounding_box, slope_vis_pcd=None, point_cloud_overlay=N
 
     camera = dict(up=plotly_up, center=plotly_center, eye=plotly_eye)
 
-    flatness_mesh_index = None
+    buildable_mesh_index = None
     for i, obj in enumerate(graph_objects):
         if hasattr(obj, 'color') and 'rgba' in str(obj.color):
-            flatness_mesh_index = i
+            buildable_mesh_index = i
             break
 
-    if flatness_mesh_index is not None:
+    if buildable_mesh_index is not None:
         visibility_on = [True] * len(graph_objects)
-        visibility_off = [i != flatness_mesh_index for i in range(len(graph_objects))]
+        visibility_off = [i != buildable_mesh_index for i in range(len(graph_objects))]
         
         updatemenus = [
             dict(
@@ -508,13 +508,13 @@ def process_file(file_path):
 
     slope_vis_pcd = create_gradient_visualization(mesh)
 
-    flatness_mesh = flatness_mesh(mesh, slope_vis_pcd)
+    buildable_mesh = flatness_mesh(mesh, slope_vis_pcd)
 
     bounding_box = create_bounding_box(mesh)
 
     point_cloud_overlay = create_point_cloud_overlay(point_cloud)
 
-    visualize_mesh(mesh, bounding_box, slope_vis_pcd, point_cloud_overlay, flatness_mesh)
+    visualize_mesh(mesh, bounding_box, slope_vis_pcd, point_cloud_overlay, buildable_mesh)
 
 
 FILES = sys.argv[1:]
