@@ -32,7 +32,6 @@ import plotly.graph_objects as go
 # - Verbose variable names with shortnames defined in the glossary
 # - Do not use comments and write self-documenting code
 
-UPSIDE_DOWN = False
 POINT_OVERLAY = False
 GRADIENT_VISUALIZATION = True
 
@@ -61,12 +60,6 @@ def load_and_preprocess_point_cloud(file_path):
     input_pcd.estimate_normals()
     oriented_bounding_box = input_pcd.get_oriented_bounding_box()
     input_pcd.rotate(oriented_bounding_box.R.T, center=oriented_bounding_box.center)
-
-    if UPSIDE_DOWN:
-        input_pcd.rotate(
-            input_pcd.get_rotation_matrix_from_xyz((np.pi, 0, 0)),
-            center=input_pcd.get_center(),
-        )
 
     return input_pcd
 
@@ -183,7 +176,9 @@ def create_gradient_visualization(mesh):
 
     if SLOPE_CULLING_THRESHOLD_RADIANS > 0:
         actual_slope_at_each_point = triangle_slope_angles_rad[indices_of_nearest_tri]
-        steep_enough_mask = actual_slope_at_each_point >= SLOPE_CULLING_THRESHOLD_RADIANS
+        steep_enough_mask = (
+            actual_slope_at_each_point >= SLOPE_CULLING_THRESHOLD_RADIANS
+        )
 
         visible_point_positions = slope_vis_point_positions[steep_enough_mask.flatten()]
         visible_point_colors = red_blue_grad_colors[steep_enough_mask.flatten()]
