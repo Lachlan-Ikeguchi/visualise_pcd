@@ -5,6 +5,7 @@ from open3d.geometry import TriangleMesh
 import numpy as np
 import sys
 from sklearn.neighbors import KDTree
+import plotly.graph_objects as go
 
 # GLOSSARY OF VARIABLE NAME ABBREVIATIONS
 # pcd = point cloud data
@@ -37,8 +38,8 @@ GRADIENT_VISUALIZATION = True
 
 POISSON_RECONSTRUCTION_DEPTH = 8
 FILTER_ITERATIONS = 5
-POINT_DISTANCE_THRESHOLD = 0.5  # meters
-SLOPE_CULLING_THRESHOLD = 1.5  # radians
+POINT_DISTANCE_THRESHOLD_METERS = 0.5
+SLOPE_CULLING_THRESHOLD_RADIANS = 1.5
 TRIANGLE_FILTERING_BATCH_SIZE = 1000
 GRADIENT_VISUALIZATION_POINTS = 50000
 POINT_CLOUD_DOWNSAMPLE_RATIO = 0.1
@@ -98,7 +99,7 @@ def filter_triangles_by_distance(mesh, point_cloud):
                 distance_to_original_pcd = np.linalg.norm(
                     centroid - nearest_pcd_point_pos
                 )
-                if distance_to_original_pcd > POINT_DISTANCE_THRESHOLD:
+                if distance_to_original_pcd > POINT_DISTANCE_THRESHOLD_METERS:
                     global_idx = batch_start + local_idx
                     far_from_original_pcd_tri_mask[global_idx] = True
 
@@ -180,9 +181,9 @@ def create_gradient_visualization(mesh):
     red_blue_grad_colors[:, 2] = slope_value_at_each_vis_point.flatten()
     red_blue_grad_colors = np.clip(red_blue_grad_colors, 0.0, 1.0)
 
-    if SLOPE_CULLING_THRESHOLD > 0:
+    if SLOPE_CULLING_THRESHOLD_RADIANS > 0:
         actual_slope_at_each_point = triangle_slope_angles_rad[indices_of_nearest_tri]
-        steep_enough_mask = actual_slope_at_each_point >= SLOPE_CULLING_THRESHOLD
+        steep_enough_mask = actual_slope_at_each_point >= SLOPE_CULLING_THRESHOLD_RADIANS
 
         visible_point_positions = slope_vis_point_positions[steep_enough_mask.flatten()]
         visible_point_colors = red_blue_grad_colors[steep_enough_mask.flatten()]
@@ -222,8 +223,28 @@ def create_bounding_box(mesh):
         ]
     )
 
+    bounding_box_triangle_indices = np.array(
+        [
+            [0, 1, 2],
+            [1, 3, 2],  # Bottom face
+            [4, 6, 5],
+            [5, 6, 7],  # Top face
+            [0, 2, 4],
+            [2, 6, 4],  # Front face
+            [1, 5, 3],
+            [3, 5, 7],  # Back face
+            [0, 4, 1],
+            [1, 4, 5],  # Left face
+            [2, 3, 6],
+            [3, 7, 6],  # Right face
+        ]
+    )
+
     bounding_box_mesh = TriangleMesh()
     bounding_box_mesh.vertices = o3d.utility.Vector3dVector(bounding_points)
+    bounding_box_mesh.triangles = o3d.utility.Vector3iVector(
+        bounding_box_triangle_indices
+    )
     bounding_box_mesh.paint_uniform_color([1, 1, 1])
 
     return bounding_box_mesh
@@ -233,8 +254,79 @@ def create_point_cloud_overlay(point_cloud):
     return point_cloud.random_down_sample(POINT_CLOUD_DOWNSAMPLE_RATIO)
 
 
+def get_geometry_center(geometry_list):
+    center = [0, 0, 0]
+    for geometry in geometry_list:
+        center = [c1 + c2 for c1, c2 in zip(center, geometry.get_center())]
+    center = [c / len(geometry_list) for c in center]
+    return center
+
+
+def get_max_bound(geometry_list):
+    max_bound = [0, 0, 0]
+    for geometry in geometry_list:
+        bound = np.subtract(geometry.get_max_bound(), geometry.get_min_bound())
+        max_bound = np.fmax(bound, max_bound)
+    return max_bound
+
+
+def get_mesh_object(geometry):
+    pl_mygrey = [0, "rgb(153, 153, 153)"], [1.0, "rgb(255,255,255)"]
+    triangles = np.asarray(geometry.triangles)
+    vertices = np.asarray(geometry.vertices)
+
+    mesh_3d = go.Mesh3d(
+        x=vertices[:, 0],
+        y=vertices[:, 1],
+        z=vertices[:, 2],
+        i=triangles[:, 0],
+        j=triangles[:, 1],
+        k=triangles[:, 2],
+        flatshading=True,
+        colorscale=pl_mygrey,
+        intensity=vertices[:, 0],
+        lighting=dict(
+            ambient=0.18,
+            diffuse=1,
+            fresnel=0.1,
+            specular=1,
+            roughness=0.05,
+            facenormalsepsilon=1e-15,
+            vertexnormalsepsilon=1e-15,
+        ),
+        lightposition=dict(x=100, y=200, z=0),
+    )
+    return mesh_3d
+
+
+def get_point_object(geometry, point_sample_factor=1):
+    points = np.asarray(geometry.points)
+    colors = None
+    if geometry.has_colors():
+        colors = np.asarray(geometry.colors)
+    elif geometry.has_normals():
+        colors = (0.5, 0.5, 0.5) + np.asarray(geometry.normals) * 0.5
+    else:
+        geometry.paint_uniform_color((1.0, 0.0, 0.0))
+        colors = np.asarray(geometry.colors)
+    if point_sample_factor > 0 and point_sample_factor < 1:
+        indices = np.random.choice(
+            len(points), (int)(len(points) * point_sample_factor), replace=False
+        )
+        points = points[indices]
+        colors = colors[indices]
+    scatter_3d = go.Scatter3d(
+        x=points[:, 0],
+        y=points[:, 1],
+        z=points[:, 2],
+        mode="markers",
+        marker=dict(size=1, color=colors),
+    )
+    return scatter_3d
+
+
 def visualize_mesh(mesh, bounding_box, slope_vis_pcd=None, point_cloud_overlay=None):
-    geometries = [mesh, bounding_box]
+    geometries = [mesh]
 
     if GRADIENT_VISUALIZATION and slope_vis_pcd is not None:
         geometries.append(slope_vis_pcd)
@@ -242,7 +334,60 @@ def visualize_mesh(mesh, bounding_box, slope_vis_pcd=None, point_cloud_overlay=N
     if POINT_OVERLAY and point_cloud_overlay is not None:
         geometries.append(point_cloud_overlay)
 
-    o3d.visualization.draw_plotly(geometries, width=PLOT_WIDTH, height=PLOT_HEIGHT)
+    graph_objects = []
+    for geometry in geometries:
+        geometry_type = geometry.get_geometry_type()
+
+        if geometry_type == o3d.geometry.Geometry.Type.PointCloud:
+            graph_objects.append(get_point_object(geometry, point_sample_factor=1))
+
+        if geometry_type == o3d.geometry.Geometry.Type.TriangleMesh:
+            graph_objects.append(get_mesh_object(geometry))
+
+    bounding_box_vertices = np.asarray(bounding_box.vertices)
+    bounding_box_triangle_indices = np.asarray(bounding_box.triangles)
+
+    graph_objects.append(
+        go.Mesh3d(
+            x=bounding_box_vertices[:, 0],
+            y=bounding_box_vertices[:, 1],
+            z=bounding_box_vertices[:, 2],
+            i=bounding_box_triangle_indices[:, 0],
+            j=bounding_box_triangle_indices[:, 1],
+            k=bounding_box_triangle_indices[:, 2],
+            color="white",
+            opacity=0.1,
+            showscale=False,
+            name="Bounding Box",
+        )
+    )
+
+    geometry_center = get_geometry_center(geometries)
+    max_bound = get_max_bound(geometries)
+
+    plotly_up = dict(x=0, y=0, z=1)
+    plotly_center = dict(x=0, y=0, z=0)
+    plotly_eye = None
+
+    camera = dict(up=plotly_up, center=plotly_center, eye=plotly_eye)
+
+    fig = go.Figure(
+        data=graph_objects,
+        layout=dict(
+            showlegend=False,
+            width=PLOT_WIDTH,
+            height=PLOT_HEIGHT,
+            margin=dict(
+                l=0,
+                r=0,
+                b=0,
+                t=0,
+            ),
+            scene_camera=camera,
+        ),
+    )
+
+    fig.show()
 
 
 def process_file(file_path):
