@@ -32,9 +32,6 @@ import plotly.graph_objects as go
 # - Verbose variable names with shortnames defined in the glossary
 # - Do not use comments and write self-documenting code
 
-POINT_OVERLAY = False
-GRADIENT_VISUALIZATION = True
-
 POISSON_RECONSTRUCTION_DEPTH = 10
 FILTER_ITERATIONS = 5
 POINT_DISTANCE_THRESHOLD_METERS = 0.5
@@ -323,10 +320,10 @@ def get_point_object(geometry, point_sample_factor=1):
 def visualize_mesh(mesh, bounding_box, slope_vis_pcd=None, point_cloud_overlay=None):
     geometries = [mesh]
 
-    if GRADIENT_VISUALIZATION and slope_vis_pcd is not None:
+    if slope_vis_pcd is not None:
         geometries.append(slope_vis_pcd)
 
-    if POINT_OVERLAY and point_cloud_overlay is not None:
+    if point_cloud_overlay is not None:
         geometries.append(point_cloud_overlay)
 
     graph_objects = []
@@ -334,10 +331,17 @@ def visualize_mesh(mesh, bounding_box, slope_vis_pcd=None, point_cloud_overlay=N
         geometry_type = geometry.get_geometry_type()
 
         if geometry_type == o3d.geometry.Geometry.Type.PointCloud:
-            graph_objects.append(get_point_object(geometry, point_sample_factor=1))
+            point_obj = get_point_object(geometry, point_sample_factor=1)
+            if geometry == slope_vis_pcd:
+                point_obj.name = "Buildable"
+            else:
+                point_obj.name = "Sample Data"
+            graph_objects.append(point_obj)
 
         if geometry_type == o3d.geometry.Geometry.Type.TriangleMesh:
-            graph_objects.append(get_mesh_object(geometry))
+            mesh_obj = get_mesh_object(geometry)
+            mesh_obj.name = "Mesh"
+            graph_objects.append(mesh_obj)
 
     bounding_box_vertices = np.asarray(bounding_box.vertices)
     bounding_box_triangle_indices = np.asarray(bounding_box.triangles)
@@ -369,12 +373,21 @@ def visualize_mesh(mesh, bounding_box, slope_vis_pcd=None, point_cloud_overlay=N
     fig = go.Figure(
         data=graph_objects,
         layout=dict(
-            showlegend=False,
+            showlegend=True,
+            legend=dict(
+                x=1.15,
+                y=0.8,
+                xanchor="left",
+                yanchor="top",
+                bgcolor="rgba(255,255,255,0.8)",
+                bordercolor="rgba(0,0,0,0.3)",
+                borderwidth=1,
+            ),
             width=PLOT_WIDTH,
             height=PLOT_HEIGHT,
             margin=dict(
                 l=0,
-                r=0,
+                r=150,
                 b=0,
                 t=0,
             ),
@@ -392,15 +405,11 @@ def process_file(file_path):
     mesh = remove_small_clusters(mesh)
     mesh = smooth_mesh(mesh)
 
-    slope_vis_pcd = None
-    if GRADIENT_VISUALIZATION:
-        slope_vis_pcd = create_gradient_visualization(mesh)
+    slope_vis_pcd = create_gradient_visualization(mesh)
 
     bounding_box = create_bounding_box(mesh)
 
-    point_cloud_overlay = None
-    if POINT_OVERLAY:
-        point_cloud_overlay = create_point_cloud_overlay(point_cloud)
+    point_cloud_overlay = create_point_cloud_overlay(point_cloud)
 
     visualize_mesh(mesh, bounding_box, slope_vis_pcd, point_cloud_overlay)
 
