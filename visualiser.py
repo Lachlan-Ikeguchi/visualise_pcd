@@ -189,6 +189,36 @@ def create_gradient_visualization(mesh):
     return slope_vis_pcd
 
 
+def flatness_mesh(mesh, slope_vis_pcd):
+    mesh.compute_vertex_normals()
+    mesh.compute_triangle_normals()
+
+    mesh_triangle_normals = np.asarray(mesh.triangle_normals)
+
+    vertical_axis = np.array([0, 0, 1])
+    dot_products_with_vertical = np.abs(np.dot(mesh_triangle_normals, vertical_axis))
+    clamped_dot_products = np.clip(dot_products_with_vertical, -1.0, 1.0)
+    angles_from_vertical_axis = np.arccos(clamped_dot_products)
+    triangle_slope_angles_rad = np.pi / 2 - angles_from_vertical_axis
+
+    buildable_mask = triangle_slope_angles_rad >= SLOPE_CULLING_THRESHOLD_RADIANS
+
+    buildable_mesh = o3d.geometry.TriangleMesh()
+    buildable_mesh.vertices = mesh.vertices
+    
+    all_triangles = np.asarray(mesh.triangles)
+    buildable_triangles = all_triangles[buildable_mask]
+    buildable_mesh.triangles = o3d.utility.Vector3iVector(buildable_triangles)
+    
+    buildable_mesh.paint_uniform_color([0.5, 0.5, 1.0])
+    
+    vertices = np.asarray(buildable_mesh.vertices)
+    vertices[:, 2] += 0.02  # slightly above main mesh
+    buildable_mesh.vertices = o3d.utility.Vector3dVector(vertices)
+    
+    return buildable_mesh
+
+
 def create_bounding_box(mesh):
     mesh_bounds = mesh.get_axis_aligned_bounding_box()
 
@@ -319,7 +349,7 @@ def get_point_object(geometry, point_sample_factor=1):
     return scatter_3d
 
 
-def visualize_mesh(mesh, bounding_box, slope_vis_pcd=None, point_cloud_overlay=None):
+def visualize_mesh(mesh, bounding_box, slope_vis_pcd=None, point_cloud_overlay=None, flatness_mesh=None):
     geometries = [mesh]
 
     if slope_vis_pcd is not None:
@@ -327,6 +357,9 @@ def visualize_mesh(mesh, bounding_box, slope_vis_pcd=None, point_cloud_overlay=N
 
     if point_cloud_overlay is not None:
         geometries.append(point_cloud_overlay)
+
+    if flatness_mesh is not None:
+        geometries.append(flatness_mesh)
 
     graph_objects = []
     for geometry in geometries:
@@ -341,8 +374,34 @@ def visualize_mesh(mesh, bounding_box, slope_vis_pcd=None, point_cloud_overlay=N
             graph_objects.append(point_obj)
 
         if geometry_type == o3d.geometry.Geometry.Type.TriangleMesh:
-            mesh_obj = get_mesh_object(geometry)
-            mesh_obj.name = "Mesh"
+            if geometry == flatness_mesh:
+                triangles = np.asarray(geometry.triangles)
+                vertices = np.asarray(geometry.vertices)
+                mesh_obj = go.Mesh3d(
+                    x=vertices[:, 0],
+                    y=vertices[:, 1],
+                    z=vertices[:, 2],
+                    i=triangles[:, 0],
+                    j=triangles[:, 1],
+                    k=triangles[:, 2],
+                    flatshading=True,
+                    color='rgba(50, 150, 255, 0.7)',
+                    lighting=dict(
+                        ambient=1.0,
+                        diffuse=1.0,
+                        specular=0.8,
+                        roughness=0.1,
+                    ),
+                    name="Buildable Overlay",
+                    visible=True,
+                    showlegend=False,
+                )
+            else:
+                mesh_obj = get_mesh_object(geometry)
+                if geometry == mesh:
+                    mesh_obj.name = "Mesh"
+                else:
+                    mesh_obj.name = "Mesh"
             graph_objects.append(mesh_obj)
 
     bounding_box_vertices = np.asarray(bounding_box.vertices)
@@ -372,6 +431,45 @@ def visualize_mesh(mesh, bounding_box, slope_vis_pcd=None, point_cloud_overlay=N
 
     camera = dict(up=plotly_up, center=plotly_center, eye=plotly_eye)
 
+    flatness_mesh_index = None
+    for i, obj in enumerate(graph_objects):
+        if hasattr(obj, 'color') and 'rgba' in str(obj.color):
+            flatness_mesh_index = i
+            break
+
+    if flatness_mesh_index is not None:
+        visibility_on = [True] * len(graph_objects)
+        visibility_off = [i != flatness_mesh_index for i in range(len(graph_objects))]
+        
+        updatemenus = [
+            dict(
+                type="buttons",
+                direction="right",
+                x=0.1,
+                y=1.15,
+                buttons=[
+                    dict(
+                        label="Hide Buildable Overlay",
+                        method="update",
+                        args=[
+                            {"visible": visibility_off},
+                            {"title": "Buildable Overlay: OFF"}
+                        ],
+                    ),
+                    dict(
+                        label="Show Buildable Overlay",
+                        method="update",
+                        args=[
+                            {"visible": visibility_on},
+                            {"title": "Buildable Overlay: ON"}
+                        ],
+                    ),
+                ],
+            ),
+        ]
+    else:
+        updatemenus = []
+
     fig = go.Figure(
         data=graph_objects,
         layout=dict(
@@ -394,6 +492,7 @@ def visualize_mesh(mesh, bounding_box, slope_vis_pcd=None, point_cloud_overlay=N
                 t=0,
             ),
             scene_camera=camera,
+            updatemenus=updatemenus,
         ),
     )
 
@@ -409,11 +508,13 @@ def process_file(file_path):
 
     slope_vis_pcd = create_gradient_visualization(mesh)
 
+    flatness_mesh = flatness_mesh(mesh, slope_vis_pcd)
+
     bounding_box = create_bounding_box(mesh)
 
     point_cloud_overlay = create_point_cloud_overlay(point_cloud)
 
-    visualize_mesh(mesh, bounding_box, slope_vis_pcd, point_cloud_overlay)
+    visualize_mesh(mesh, bounding_box, slope_vis_pcd, point_cloud_overlay, flatness_mesh)
 
 
 FILES = sys.argv[1:]
