@@ -243,7 +243,9 @@ def create_bounding_box(mesh):
 
 
 def create_point_cloud_overlay(point_cloud):
-    return point_cloud.random_down_sample(POINT_CLOUD_DOWNSAMPLE_RATIO)
+    overlay = point_cloud.random_down_sample(POINT_CLOUD_DOWNSAMPLE_RATIO)
+    overlay.paint_uniform_color([0, 1, 0])
+    return overlay
 
 
 def get_geometry_center(geometry_list):
