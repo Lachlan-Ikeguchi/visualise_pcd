@@ -6,7 +6,6 @@ import numpy as np
 import sys
 from sklearn.neighbors import KDTree
 
-
 # GLOSSARY OF VARIABLE NAME ABBREVIATIONS
 # pcd = point cloud data
 # pts = points
@@ -32,12 +31,17 @@ from sklearn.neighbors import KDTree
 # - Verbose variable names with shortnames defined in the glossary
 # - Do not use comments and write self-documenting code
 
-FILTER_ITERATIONS = 5
-POINT_DISTANCE_THRESHOLD = 0.5  # meters
 UPSIDE_DOWN = False
 POINT_OVERLAY = False
 GRADIENT_VISUALIZATION = True
+
+POISSON_RECONSTRUCTION_DEPTH = 8
+FILTER_ITERATIONS = 5
+POINT_DISTANCE_THRESHOLD = 0.5  # meters
 SLOPE_CULLING_THRESHOLD = 1.5  # radians
+TRIANGLE_FILTERING_BATCH_SIZE = 1000
+GRADIENT_VISUALIZATION_POINTS = 50000
+POINT_CLOUD_DOWNSAMPLE_RATIO = 0.1
 
 PLOT_WIDTH = 1200
 PLOT_HEIGHT = 800
@@ -68,7 +72,7 @@ def load_and_preprocess_point_cloud(file_path):
 
 def create_mesh_from_point_cloud(point_cloud):
     return o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(
-        point_cloud, depth=8
+        point_cloud, depth=POISSON_RECONSTRUCTION_DEPTH
     )
 
 
@@ -80,7 +84,7 @@ def filter_triangles_by_distance(mesh, point_cloud):
     far_from_original_pcd_tri_mask = np.zeros(len(mesh_triangles), dtype=bool)
     triangle_centroids = create_triangle_centroids(mesh_triangles, mesh_vertices)
 
-    batch_size = 1000
+    batch_size = TRIANGLE_FILTERING_BATCH_SIZE
     for batch_start in range(0, len(triangle_centroids), batch_size):
         batch_end = min(batch_start + batch_size, len(triangle_centroids))
         batch_centroids = triangle_centroids[batch_start:batch_end]
@@ -154,7 +158,9 @@ def create_gradient_visualization(mesh):
     else:
         normalized_slope_values = np.zeros_like(triangle_slope_angles_rad)
 
-    slope_vis_pcd = mesh.sample_points_uniformly(number_of_points=50000)
+    slope_vis_pcd = mesh.sample_points_uniformly(
+        number_of_points=GRADIENT_VISUALIZATION_POINTS
+    )
     slope_vis_point_positions = np.asarray(slope_vis_pcd.points)
 
     current_mesh_triangles = np.asarray(mesh.triangles)
@@ -224,7 +230,7 @@ def create_bounding_box(mesh):
 
 
 def create_point_cloud_overlay(point_cloud):
-    return point_cloud.random_down_sample(0.1)
+    return point_cloud.random_down_sample(POINT_CLOUD_DOWNSAMPLE_RATIO)
 
 
 def visualize_mesh(mesh, bounding_box, slope_vis_pcd=None, point_cloud_overlay=None):
